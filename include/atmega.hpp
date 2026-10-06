@@ -13,35 +13,49 @@ class IOPin final : public IOPinBase{
         using out = Tout;
         using ddr = Tddr;
         using in = Tin;
+
+    private:
+        using out_reg = typename out::reg;
+        using in_reg  = typename in::reg;
     
+    public:
         static inline void asOut() noexcept 
+            requires (ddr::wr && ddr::rd)
         {
-        ddr::reg() |= (typename ddr::reg::type{1} << ddr::bit);
+            ddr::set();
         }
 
         static inline void asIn() noexcept 
+            requires (ddr::wr && ddr::rd)
         {
-            ddr::reg() &= ~(typename ddr::reg::type{1} << ddr::bit);
+            ddr::clr();
         }
 
         static inline void high() noexcept 
+            requires (ddr::wr && ddr::rd)
         {
-            out::reg() |= (typename out::reg::type{1} << out::bit);
+            out::set();
         }
 
         static inline void low() noexcept 
+            requires (ddr::wr && ddr::rd)
         {
-            out::reg() &= ~(typename out::reg::type{1} << out::bit);
+            out::clr();
         }
 
         static inline void toggle() noexcept 
+            requires (ddr::wr && ddr::rd)
         {
-            out::reg() ^= (typename out::reg::type{1} << out::bit);
+            using reg_t = typename out_reg::type;
+            out_reg::write(
+                out_reg::read() ^ (reg_t{1} << out::bit)
+            );
         }
 
         static inline bool read() noexcept 
+            requires (in::rd)
         {
-            return (in::reg() >> in::bit) & 1;
+            return ((in_reg::read() >> in::bit) & 1u) != 0;
         }
 };
 

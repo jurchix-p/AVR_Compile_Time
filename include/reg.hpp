@@ -29,9 +29,9 @@ class Register : public BaseRegister{
         ~ Register() = delete;
         static constexpr T fullWriteMask = WriteMask;
         static constexpr T fullReadMask = ReadMask;
-        static constexpr inline auto& reg(){return *TAddr;}
-        static constexpr inline void write(const T& val){reg() = val;}
-        static constexpr inline T read(){return reg();}
+        static constexpr inline auto& reg() noexcept {return *TAddr;}
+        static constexpr inline void write(const T& val) noexcept {reg() = val;}
+        static constexpr inline T read() noexcept {return reg();}
         using type = T;
 };
 
@@ -50,8 +50,17 @@ class RegisterBit{
         using reg = TReg;
         using reg_t = reg::type;
         static constexpr auto bit = TBit;
-        static constexpr inline void set(){ reg::write(reg::read | ((reg_t){1} << bit));}
-        static constexpr inline void clr(){ reg::write(reg::read & (~((reg_t){1} << bit)));}
+        static constexpr bool wr = Twr;
+        static constexpr bool rd = Trd;
+
+        static inline void set() noexcept requires (Twr && Trd)
+        { 
+            reg::write(reg::read() | (reg_t{1} << bit));
+        }
+        static inline void clr() noexcept requires (Twr && Trd)
+        { 
+            reg::write(reg::read() & (~(reg_t{1} << bit)));
+        }
 };
 
 template<class T>
@@ -82,8 +91,31 @@ class Port{
             using type = TRegType;   
         };
 
-        static_assert(!hasElemDuplicate(type_pack<TPortRegLine...>{}),
-                        "Duplicate RegisterLine in Port");
+        ////
+        template<class TReg, uint8_t TBit>
+        struct PhysicalLine {};
+
+        static_assert(
+            !hasElemDuplicate(
+                type_pack<
+                    PhysicalLine<
+                        typename TPortRegLine::reg,
+                        TPortRegLine::bit
+                    >...
+                >{}
+            ),
+            "Duplicate physical register bit in Port"
+        );
+
+        static_assert(
+            sizeof...(TPortRegLine) > 0,
+            "Port must contain at least one bit"
+        );
+
+        static_assert(
+            sizeof...(TPortRegLine) <= 64,
+            "Port cannot contain more than 64 bits"
+        );
 
         static constexpr auto usedLines = type_pack<TPortRegLine...>{};
 
@@ -159,38 +191,62 @@ class Port{
             }(regLinesPack);
         };
 
-        static constexpr auto dataToRegister = []<class...TReg, auto...U1, auto...U2>(type_pack<Mapping<TReg, U1, U2>...> ts, const auto& value){
+        static constexpr auto dataToRegister =
+            []<class... TReg, auto... U1, auto... U2>(
+                type_pack<Mapping<TReg, U1, U2>...> ts,
+                const auto& value)
+        {
             if constexpr (ts.size)
             {
+                using work_t = std::common_type_t<portData_t, TReg...>;
+                const work_t v = static_cast<work_t>(value);
+            
                 return ([&]()
                 {
-                    if constexpr(U2 > 0)
-                        return ((static_cast<portData_t>(value) & (static_cast<portData_t>(U1) << U2)) >> U2);
-                    else if constexpr(U2 < 0)
-                        return ((static_cast<portData_t>(value) & (static_cast<portData_t>(U1) >> (-U2))) << (-U2));
+                    constexpr work_t mask = static_cast<work_t>(U1);
+                
+                    if constexpr (U2 > 0)
+                        return (v & (mask << U2)) >> U2;
+                    else if constexpr (U2 < 0)
+                        return (v & (mask >> (-U2))) << (-U2);
                     else
-                        return (static_cast<portData_t>(value) & static_cast<portData_t>(U1));
-                }() | ...);
-            } 
-            else 
-                return 0;
-        };
-        
-        static constexpr auto dataFromRegister = []<class...TReg, auto...U1, auto...U2>(type_pack<Mapping<TReg, U1, U2>...> ts, const auto& value) -> portData_t {
-            if constexpr (ts.size)
-            {
-                return ([&]()
-                {
-                    if constexpr(U2 > 0)
-                        return ((((static_cast <portData_t>(value) & (static_cast <portData_t>(U1))) << U2)));
-                    else if constexpr(U2 < 0)
-                        return ((((static_cast <portData_t>(value) & (static_cast <portData_t>(U1))) >> -U2)));
-                    else
-                        return (static_cast <portData_t>(value) & (static_cast <portData_t>(U1)));
+                        return v & mask;
                 }() | ...);
             }
-            else 
+            else
+            {
                 return 0;
+            }
+        };
+
+        static constexpr auto dataFromRegister =
+            []<class... TReg, auto... U1, auto... U2>(
+                type_pack<Mapping<TReg, U1, U2>...> ts,
+                const auto& value) -> portData_t
+        {
+            if constexpr (ts.size)
+            {
+                using work_t = std::common_type_t<portData_t, TReg...>;
+                const work_t v = static_cast<work_t>(value);
+            
+                return static_cast<portData_t>(
+                    ([&]()
+                    {
+                        constexpr work_t mask = static_cast<work_t>(U1);
+                    
+                        if constexpr (U2 > 0)
+                            return (v & mask) << U2;
+                        else if constexpr (U2 < 0)
+                            return (v & mask) >> (-U2);
+                        else
+                            return v & mask;
+                    }() | ...)
+                );
+            }
+            else
+            {
+                return 0;
+            }
         };
 
         template<class...T, auto...U1, auto...U2>
@@ -201,12 +257,6 @@ class Port{
             else
                 return 0;
         }
-
-        // temolate<class TReg>
-        // static constexpr auto fullWriteMask(just_type<TReg>)
-        // {
-            
-        // }
 
         template<class T>
         static constexpr T fullRegMask() 
@@ -223,34 +273,33 @@ class Port{
 
             constexpr auto regMask = combinedRegMask(mappingPack);
             constexpr bool fullWrite = (regMask == TReg::fullWriteMask);
-            // constexpr bool fullWrite = (regMask == fullRegMask<reg_t>());
 
             const reg_t newBits =  static_cast<reg_t>(dataToRegister(mappingPack, portValue));
 
             if constexpr (fullWrite) {
                 TReg::write(newBits);
-            } else {
+            } 
+            else
+            {
+                constexpr bool readable = []<class... Lines>(
+                    type_pack<Lines...>)
+                {
+                    return (
+                        (!std::is_same_v<typename Lines::reg, TReg>
+                            || Lines::rd)
+                        && ...
+                    );
+                }(usedLines);
+            
+                static_assert(
+                    readable,
+                    "Partial register write requires readable port bits"
+                );
+            
                 const reg_t old = TReg::read();
                 TReg::write((old & ~regMask) | newBits);
             }
         }
-        // template<class TReg, class TMappingPack>
-        // static constexpr inline void writeOrUpdate(const auto& portValue) 
-        // {
-        //     using reg_t = typename TReg::type;
-
-        //     constexpr auto regMask = combinedRegMask(TMappingPack{});
-        //     constexpr bool fullWrite = (regMask == fullRegMask<reg_t>());
-
-        //     const reg_t newBits =  static_cast<reg_t>(dataToRegister(TMappingPack{}, portValue));
-
-        //     if constexpr (fullWrite) {
-        //         TReg::write(newBits);
-        //     } else {
-        //         const reg_t old = TReg::read();
-        //         TReg::write((old & ~regMask) | newBits);
-        //     }
-        // }
 
         template<class TReg>
         static constexpr inline portData_t readRegister(just_type<TReg>)
@@ -261,55 +310,35 @@ class Port{
 
     public:
         static constexpr inline void writePort(const auto& value) noexcept
+            requires ((TPortRegLine::wr && ...))
         {
             [&]<class...TReg>(type_pack<TReg...>)
             {
                 (writeOrUpdateRegister(just_type<TReg>{}, value), ...);
             }(usedRegs);
         }
-        // static constexpr inline void writePort(const auto& value) noexcept
-        // {
-        //     [&]<class...TReg>(type_pack<TReg...>)
-        //     {
-        //         (writeOrUpdate<TReg, decltype(groupByOffsetAndDirection(just_type<TReg>{}))>(value), ...);
-        //     }(usedRegs);
-        // }
 
         static constexpr inline portData_t readPort() noexcept
+            requires ((TPortRegLine::rd && ...))
         {
             return []<class...TReg>(type_pack<TReg...>)
             {
-                return (readRegister(just_type<TReg>{}) +  ...);
+                return (readRegister(just_type<TReg>{}) | ...);
             }(usedRegs);
         } 
-        // static constexpr inline portData_t readPort() noexcept
-        // {
-        //     return []<class...TReg>(type_pack<TReg...>)
-        //     {
-        //         return ((dataFromRegister(groupByOffsetAndDirection(just_type<TReg>{}), TReg::read())) +  ...);
-        //     }(usedRegs);
-        // } 
 
         static constexpr inline void setPort() noexcept
+            requires ((TPortRegLine::wr && ...))
         {
             writePort(~portData_t{0});
         }
 
         static constexpr inline void clrPort() noexcept
+            requires ((TPortRegLine::wr && ...))
         {
             writePort(0);
         }
 };
-
-// template<class... Ts>
-// class Dev : private Port<Ts...>
-// {
-//     public:
-//         using Port<Ts...>::writePort;
-//         using Port<Ts...>::readPort;
-
-        
-// };
 
 template<class... Ts>
 class Dev

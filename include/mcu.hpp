@@ -3,9 +3,9 @@
 
 #include<atmega.hpp>
 
-static volatile uint8_t outA, outB, outC, outD;
-static volatile uint8_t inA, inB, inC, inD;
-static volatile uint8_t dirA, dirB, dirC, dirD;
+inline volatile uint8_t outA, outB, outC, outD;
+inline volatile uint8_t inA, inB, inC, inD;
+inline volatile uint8_t dirA, dirB, dirC, dirD;
 
 
 using OutA = Register<uint8_t, &outA, 0xFF, 0xFF>;
