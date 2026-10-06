@@ -32,19 +32,19 @@ class IOPin final : public IOPinBase{
         }
 
         static inline void high() noexcept 
-            requires (ddr::wr && ddr::rd)
+            requires (out::wr && out::rd)
         {
             out::set();
         }
 
         static inline void low() noexcept 
-            requires (ddr::wr && ddr::rd)
+            requires (out::wr && out::rd)
         {
             out::clr();
         }
 
         static inline void toggle() noexcept 
-            requires (ddr::wr && ddr::rd)
+            requires (out::wr && out::rd)
         {
             using reg_t = typename out_reg::type;
             out_reg::write(
