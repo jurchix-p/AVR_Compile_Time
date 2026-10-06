@@ -1,0 +1,22 @@
+# Kompilācijas rezultāti
+/build/
+
+# VS Code lokālie iestatījumi
+/.vscode/
+
+# Ģenerētie faili
+*.o
+*.obj
+*.d
+*.elf
+*.hex
+*.eep
+*.bin
+*.exe
+*.map
+*.lss
+
+# Pagaidu faili
+*.tmp
+*.log
+*~
