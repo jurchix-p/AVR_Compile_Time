@@ -5,6 +5,8 @@
 #include<type_traits>
 #include<pack.hpp>
 #include<utility>
+#include<concepts>
+#include <cstddef>
 
 template<class TData, TData TMask>
 struct Mask
@@ -130,7 +132,7 @@ class Port{
 
         static constexpr auto portLines = [](auto t)
         {
-            return [&]<class...Ts, size_t ... Is>(type_pack<Ts...>, std::index_sequence<Is...>)
+            return [&]<class...Ts, std::size_t ... Is>(type_pack<Ts...>, std::index_sequence<Is...>)
             {
                 return (type_pack<PortLine<Ts, t.size - Is - 1>...>{});
             }(t, std::make_index_sequence<t.size>{});

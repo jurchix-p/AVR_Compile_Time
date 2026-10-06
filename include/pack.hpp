@@ -2,13 +2,14 @@
 #define _PACK_HPP_
 #include <cstdint>
 #include<type_traits>
+#include <cstddef>
 
 template<class...Ts> struct type_pack{
-    static constexpr size_t size = sizeof...(Ts);
+    static constexpr std::size_t size = sizeof...(Ts);
 };
 using empty_pack = type_pack<>;
 template<typename ... Ts>
-constexpr size_t size_of_pack (type_pack<Ts ...>){ return sizeof...(Ts); }
+constexpr std::size_t size_of_pack (type_pack<Ts ...>){ return sizeof...(Ts); }
 
 
 template<class T> struct just_type{using type = T;};
